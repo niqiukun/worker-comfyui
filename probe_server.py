@@ -41,6 +41,11 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/ping"):
             self._send(200, b"pong")
             return
+        # Hold the request so concurrent bursts force the scaler to add
+        # workers (otherwise one worker answers all requests and we
+        # sample only one host). Tunable for faster experiments.
+        import time
+        time.sleep(float(os.environ.get("PROBE_DELAY", "3")))
         self._send(200, report_bytes())
 
     def log_message(self, *a):
