@@ -996,11 +996,15 @@ def handler(job):
 
         print(f"worker-comfyui - Processing {len(outputs)} output nodes...")
         for node_id, node_output in outputs.items():
-            if "images" in node_output:
+            # Collect both image and audio outputs (e.g. SaveAudioAdvanced).
+            # Audio entries use the same {filename, subfolder, type} structure.
+            for output_key in ("images", "audio"):
+                if output_key not in node_output:
+                    continue
                 print(
-                    f"worker-comfyui - Node {node_id} contains {len(node_output['images'])} image(s)"
+                    f"worker-comfyui - Node {node_id} contains {len(node_output[output_key])} {output_key}"
                 )
-                for image_info in node_output["images"]:
+                for image_info in node_output[output_key]:
                     filename = image_info.get("filename")
                     subfolder = image_info.get("subfolder", "")
                     img_type = image_info.get("type")
@@ -1023,7 +1027,36 @@ def handler(job):
                     if image_bytes:
                         file_extension = os.path.splitext(filename)[1] or ".png"
 
-                        if os.environ.get("BUCKET_ENDPOINT_URL"):
+                        # Audio files (FLAC/WAV/MP3) are large; copy them to the
+                        # network volume instead of returning megabytes of base64.
+                        if output_key == "audio" and os.path.isdir(
+                            "/runpod-volume/models"
+                        ):
+                            try:
+                                vol_dir = os.path.join(
+                                    "/runpod-volume/outputs", job_id
+                                )
+                                os.makedirs(vol_dir, exist_ok=True)
+                                vol_path = os.path.join(vol_dir, filename)
+                                with open(vol_path, "wb") as f:
+                                    f.write(image_bytes)
+                                print(
+                                    f"worker-comfyui - Saved audio to network volume: {vol_path}"
+                                )
+                                output_data.append(
+                                    {
+                                        "filename": filename,
+                                        "type": "volume_path",
+                                        "data": vol_path,
+                                    }
+                                )
+                            except Exception as e:
+                                error_msg = (
+                                    f"Error saving {filename} to network volume: {e}"
+                                )
+                                print(f"worker-comfyui - {error_msg}")
+                                errors.append(error_msg)
+                        elif os.environ.get("BUCKET_ENDPOINT_URL"):
                             try:
                                 with tempfile.NamedTemporaryFile(
                                     suffix=file_extension, delete=False

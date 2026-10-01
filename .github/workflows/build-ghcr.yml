@@ -11,8 +11,6 @@ on:
   push:
     branches:
       - comfy-0.38.1
-    paths:
-      - ".github/workflows/build-ghcr.yml"
 
 permissions:
   contents: read
